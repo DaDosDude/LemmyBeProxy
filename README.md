@@ -55,7 +55,8 @@ docker run -d \
 ```
 
 `BACKEND_TYPE` is `piefed` or `lemmy`; `BACKEND_INSTANCE` is that
-backend's hostname, no scheme, no path. `FRONTEND_VERSION` is `0.19`
+backend's hostname (or a full internal URL — see Environment variables).
+`FRONTEND_VERSION` is `0.19`
 (current Lemmy wire format) or `0.17` (older format, e.g. lemmyBB). All
 three are required — see Environment variables for the full list.
 
@@ -91,7 +92,8 @@ curl -s "https://your-domain.example/api/v3/site" | head -c 200
   endpoint this proxy implements.
 
 **Endpoints implemented and tested against live Piefed and real Lemmy
-instances:** `user/login`, `user/unread_count`, `user`, `user/block`,
+instances:** `user/login`, `user/register`, `user/get_captcha`,
+`user/unread_count`, `user`, `user/block`,
 `user/save_user_settings` (Piefed only supports a subset of fields — see
 Features not working yet), `user/mention`, `user/replies`,
 `private_message/list` (Piefed has no equivalent for these three —
@@ -117,7 +119,7 @@ API surface this proxy implements.
 
 **Not implemented in Piefed itself**, confirmed from Piefed's own source
 — not a translation gap, there's nothing on Piefed's side to translate
-to: registration, report count, password reset/change, TOTP, account
+to: report count, password reset/change, TOTP, account
 deletion, email verification, admin tools, custom emoji.
 
 **Known limitations:**
@@ -139,6 +141,11 @@ deletion, email verification, admin tools, custom emoji.
   not a proxy limitation. A community you're personally subscribed to
   resolves fine for you, but won't resolve for anonymous visitors unless
   it's local to the instance you're querying.
+- `user/get_captcha` always returns no captcha required against Piefed —
+  Piefed has no image/audio captcha system to forward to, so this is an
+  honest "none needed" rather than a faked one. Real Lemmy backends
+  return a genuine captcha challenge when the instance has one enabled
+  (confirmed against retrolemmy.com, which does).
 - 0.17.x `mark_as_read` returns the canonical `{success: bool}` shape
   instead of real 0.17.x's `PostResponse{post_view}` — building the
   latter needs an extra backend round-trip, deferred rather than rushed.
@@ -146,9 +153,16 @@ deletion, email verification, admin tools, custom emoji.
   for optimistic-UI correlation) — accepted on requests, not threaded
   through to responses yet.
 
-**Real Rust-client interop lessons**, found by testing against the
-actual, official, unmodified lemmyBB — not just checking source-level
-struct shapes, which alone wasn't enough to catch these:
+**Real interop lessons**, found by testing against actual live
+software — a real client (lemmyBB) and a real backend (retrolemmy.com)
+— not just checking source-level shapes, which alone wasn't enough to
+catch these:
+- Real Lemmy's own pict-rs returns `201 Created` for a successful image
+  upload, not `200 OK` — `LemmyBackend.UploadImage` only accepted 200
+  at first, silently treating every successful upload as a failure
+  against a real Lemmy backend specifically (Piefed's own upload
+  behavior happened to return 200, which is why this went unnoticed
+  until testing against retrolemmy.com directly).
 - Timestamps must not carry a timezone suffix for 0.17.x — real Lemmy
   0.17.x uses `chrono::NaiveDateTime` (no timezone concept) throughout,
   and its deserializer errors on one if present. See
@@ -171,13 +185,27 @@ struct shapes, which alone wasn't enough to catch these:
   strict Rust deserializer — `Site.LastRefreshedAt` was previously left
   as `""` with a `// todo`; it now derives from the ActivityPub actor's
   own `updated`/`published` timestamp instead. See `ConvertSite`.
+- A response field genuinely absent in some real cases needs to be
+  modeled as a pointer, not a plain value with an empty-string
+  convention — `LoginResponse.Jwt` is `Option<String>` in real Lemmy,
+  since registration can succeed without an immediate JWT when an
+  application needs admin approval first (retrolemmy.com's own
+  `requireapplication` mode is a live example).
+- A field's real Rust type isn't always what its name suggests — real
+  Lemmy's `PostAggregates.unread_comments` is a signed `i64`, not
+  unsigned, and genuinely sends `-1` in a real edge case (confirmed: an
+  old post in retrolemmy.com's own `general` community). It's a
+  per-user field only calculated when logged in, so an unsigned type
+  here crashed with "internal lemmy layer proxy error" specifically for
+  authenticated requests — anonymous requests never triggered it,
+  making this easy to miss without testing both states live.
 
 ## Environment variables
 
 | Variable | Required | Description |
 |---|---|---|
 | `BACKEND_TYPE` | Yes | `piefed` or `lemmy`. No default. |
-| `BACKEND_INSTANCE` | Yes | Hostname of the backend. No scheme, no trailing slash. |
+| `BACKEND_INSTANCE` | Yes | Hostname of the backend, no trailing slash. Defaults to `https://`. Can instead be given a full `http://` or `https://` URL to reach an internal address directly (e.g. `http://lemmy:8536` on the backend's own Docker network) — bypasses a public domain's reverse proxy and whatever's in front of it (anti-abuse layers, CDNs) entirely. Useful when the proxy runs on the same host/network as the real backend; see Troubleshooting for why this can matter. |
 | `FRONTEND_VERSION` | Yes | `0.19` or `0.17`. No default. |
 | `PORT` | No | Port to listen on. Defaults to `8080`. |
 | `SIMULATE` | No | If set, the proxy presents itself as a Lemmy server when asked for version/software info. |
@@ -187,6 +215,17 @@ vars, including `LEMMY_DOMAIN`, `COLLAPSE_MEDIA`, `HIDE_THUMBNAILS` — see
 that project's own documentation.
 
 ## Troubleshooting
+
+**Requests to the backend fail or get rate-limited for no obvious
+reason, even though the exact same request works fine from elsewhere**
+— if the proxy runs on the same server as the backend itself, and
+`BACKEND_INSTANCE` is set to that server's own public domain, outbound
+requests can hairpin through the host's own public IP and get treated
+as suspicious by the site's own anti-abuse layer — confirmed
+reproducible with plain `curl`, nothing specific to this proxy's
+client. Point `BACKEND_INSTANCE` at the backend's internal address
+directly instead (e.g. `http://lemmy:8536` on its own Docker network) —
+see the `BACKEND_INSTANCE` row above.
 
 **Parse error mentioning an invalid character around byte `0x1f`** — a
 gzip-compressed response got handed to the JSON parser undecompressed.

@@ -45,6 +45,7 @@ func init() {
 	AppRouter.AddRoute(newRoute("/community/follow", router.HttpMethodPost, communityController.FollowCommunity))
 	AppRouter.AddRoute(newRoute("/community/block", router.HttpMethodPost, communityController.BlockCommunity))
 	AppRouter.AddRoute(newRoute("/search", router.HttpMethodGet, searchController.Search))
+	AppRouter.AddRoute(newRoute("/user/register", router.HttpMethodPost, userController.Register))
 
 	// These two intentionally bypass the /api/v3 prefix — mlmym (and real
 	// Lemmy pict-rs) upload/serve images at the site root, not under the API.
@@ -52,6 +53,5 @@ func init() {
 	AppRouter.AddRoute(router.NewRoute("/pictrs/image/{token}", router.HttpMethodGet, uploadController.ServeImage))
 
 	// impossible to implement, error pages only
-	AppRouter.AddRoute(newRoute("/user/register", router.HttpMethodPost, userController.Register))
 	AppRouter.AddRoute(newRoute("/user/report_count", router.HttpMethodGet, userController.GetReportCount))
 }

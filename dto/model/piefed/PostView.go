@@ -16,5 +16,5 @@ type PostView struct {
 	Hidden                     bool           `json:"hidden" validate:"required"`
 	CreatorBlocked             *bool          `json:"creator_blocked,omitempty"`
 	MyVote                     *int           `json:"my_vote,omitempty"`
-	UnreadComments             uint           `json:"unread_comments" validate:"required"`
+	UnreadComments             int64          `json:"unread_comments" validate:"required"`
 }

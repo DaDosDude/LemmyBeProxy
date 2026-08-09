@@ -16,5 +16,5 @@ type PostView struct {
 	Read                       bool           `json:"read" validate:"required"`
 	Saved                      bool           `json:"saved" validate:"required"`
 	Subscribed                 SubscribedType `json:"subscribed" validate:"required"`
-	UnreadComments             uint           `json:"unread_comments" validate:"required"`
+	UnreadComments             int64          `json:"unread_comments" validate:"required"`
 }

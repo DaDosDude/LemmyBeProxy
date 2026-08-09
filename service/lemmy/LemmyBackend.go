@@ -204,3 +204,7 @@ func (receiver *LemmyBackend) ResolveObject(request *lemmyRequest.ResolveObjectR
 func (receiver *LemmyBackend) GetCaptcha(headers appHttp.Headers) (*lemmyResponse.GetCaptchaResponse, error) {
 	return defaultHandler[lemmyResponse.GetCaptchaResponse](receiver.client, "/user/get_captcha", router.HttpMethodGet, nil, headers)
 }
+
+func (receiver *LemmyBackend) MarkAllAsRead(headers appHttp.Headers) (*lemmyResponse.GetRepliesResponse, error) {
+	return defaultHandler[lemmyResponse.GetRepliesResponse](receiver.client, "/user/mark_all_as_read", router.HttpMethodPost, nil, headers)
+}

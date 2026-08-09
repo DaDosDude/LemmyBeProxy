@@ -172,3 +172,12 @@ func (receiver *UserController) GetPrivateMessages(request *http.Request) (*http
 
 	return &http.Response{StatusCode: goHttp.StatusOK, Body: receiver.frontend.BuildGetPrivateMessagesResponse(resp)}, nil
 }
+
+func (receiver *UserController) MarkAllAsRead(request *http.Request) (*http.Response, error) {
+	resp, err := receiver.backend.MarkAllAsRead(request.Headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Response{StatusCode: goHttp.StatusOK, Body: receiver.frontend.BuildGetRepliesResponse(resp)}, nil
+}

@@ -537,3 +537,15 @@ func (receiver *PiefedBackend) Register(request *lemmyRequest.RegisterRequest, h
 		VerifyEmailSent:     false,
 	}, nil
 }
+
+// MarkAllAsRead has no Piefed equivalent — Piefed's own unread-count
+// tracking has no "mark everything read in one call" action to map
+// this to. Returning an empty GetRepliesResponse rather than a 404
+// matters the same way it does for GetPersonMentions/GetReplies: a 404
+// here is what would break the client, not what's actually missing
+// from the user's perspective (there was nothing to mark as read
+// against Piefed in the first place, since GetPersonMentions/GetReplies
+// already return empty for the same reason).
+func (receiver *PiefedBackend) MarkAllAsRead(headers appHttp.Headers) (*lemmyResponse.GetRepliesResponse, error) {
+	return &lemmyResponse.GetRepliesResponse{Replies: []lemmyModel.CommentReplyView{}}, nil
+}

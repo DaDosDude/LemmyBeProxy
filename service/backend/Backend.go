@@ -87,4 +87,11 @@ type Backend interface {
 	// display. See GetCaptchaResponse's own comment for why this
 	// always returns Ok: nil.
 	GetCaptcha(headers http.Headers) (*lemmyResponse.GetCaptchaResponse, error)
+
+	// MarkAllAsRead is called by lemmyBB when a user clicks "mark all
+	// notifications as read." Real Lemmy returns GetRepliesResponse for
+	// this endpoint (an odd but confirmed real convention — reusing the
+	// replies-list shape rather than a bare success response), which is
+	// exactly the shape lemmyBB's own client code expects back.
+	MarkAllAsRead(headers http.Headers) (*lemmyResponse.GetRepliesResponse, error)
 }

@@ -7,7 +7,7 @@ import "LemmyBeProxy/dto/model/lemmy"
 // through this proxy.
 type SearchRequest struct {
 	Q             string             `json:"q"`
-	Type          lemmy.SearchType   `json:"type_"`
+	Type          lemmy.SearchType   `json:"type_,omitempty"`
 	Limit         *uint              `json:"limit,omitempty"`
 	ListingType   *lemmy.ListingType `json:"listing_type,omitempty"`
 	Page          *uint              `json:"page,omitempty"`

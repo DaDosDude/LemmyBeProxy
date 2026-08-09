@@ -89,6 +89,10 @@ func (receiver *LemmyBackend) Login(request *lemmyRequest.LoginRequest, headers 
 	return defaultHandler[lemmyResponse.LoginResponse](receiver.client, "/user/login", router.HttpMethodPost, request, headers)
 }
 
+func (receiver *LemmyBackend) Register(request *lemmyRequest.RegisterRequest, headers appHttp.Headers) (*lemmyResponse.LoginResponse, error) {
+	return defaultHandler[lemmyResponse.LoginResponse](receiver.client, "/user/register", router.HttpMethodPost, request, headers)
+}
+
 func (receiver *LemmyBackend) GetUnreadCount(headers appHttp.Headers) (*lemmyResponse.GetUnreadCountResponse, error) {
 	return defaultHandler[lemmyResponse.GetUnreadCountResponse](receiver.client, "/user/unread_count", router.HttpMethodGet, nil, headers)
 }
@@ -195,4 +199,8 @@ func (receiver *LemmyBackend) GetPrivateMessages(request *lemmyRequest.GetPrivat
 
 func (receiver *LemmyBackend) ResolveObject(request *lemmyRequest.ResolveObjectRequest, headers appHttp.Headers) (*lemmyResponse.ResolveObjectResponse, error) {
 	return defaultHandler[lemmyResponse.ResolveObjectResponse](receiver.client, "/resolve_object", router.HttpMethodGet, request, headers)
+}
+
+func (receiver *LemmyBackend) GetCaptcha(headers appHttp.Headers) (*lemmyResponse.GetCaptchaResponse, error) {
+	return defaultHandler[lemmyResponse.GetCaptchaResponse](receiver.client, "/user/get_captcha", router.HttpMethodGet, nil, headers)
 }

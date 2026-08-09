@@ -11,9 +11,9 @@ import (
 )
 
 // UserController is now thin on both axes for every endpoint except
-// Register and GetReportCount, which stay as pure stub responses with no
+// GetReportCount, which stays as a pure stub response with no
 // backend call at all — there's nothing for either interface to
-// actually do for them.
+// actually do for it.
 type UserController struct {
 	backend  backend.Backend
 	frontend frontend.Frontend
@@ -41,12 +41,17 @@ func (receiver *UserController) Login(request *http.Request) (*http.Response, er
 }
 
 func (receiver *UserController) Register(request *http.Request) (*http.Response, error) {
-	_, err := helper.ParseRequest[lemmy.RegisterRequest](request)
+	reqDto, err := helper.ParseRequest[lemmy.RegisterRequest](request)
 	if err != nil {
 		return helper.ConvertValidationErrorsToResponse(err), nil
 	}
 
-	return http.NotImplementedResponse(), nil
+	resp, err := receiver.backend.Register(reqDto, request.Headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Response{StatusCode: goHttp.StatusOK, Body: receiver.frontend.BuildLoginResponse(resp)}, nil
 }
 
 func (receiver *UserController) GetUnreadCount(request *http.Request) (*http.Response, error) {
@@ -56,6 +61,15 @@ func (receiver *UserController) GetUnreadCount(request *http.Request) (*http.Res
 	}
 
 	return &http.Response{StatusCode: goHttp.StatusOK, Body: receiver.frontend.BuildGetUnreadCountResponse(resp)}, nil
+}
+
+func (receiver *UserController) GetCaptcha(request *http.Request) (*http.Response, error) {
+	resp, err := receiver.backend.GetCaptcha(request.Headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &http.Response{StatusCode: goHttp.StatusOK, Body: receiver.frontend.BuildGetCaptchaResponse(resp)}, nil
 }
 
 func (receiver *UserController) GetReportCount(request *http.Request) (*http.Response, error) {

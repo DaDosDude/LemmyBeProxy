@@ -200,3 +200,7 @@ func (receiver *Frontend019) ParseResolveObjectRequest(request *http.Request) (*
 func (receiver *Frontend019) BuildResolveObjectResponse(resp *lemmyResponse.ResolveObjectResponse) any {
 	return resp
 }
+
+func (receiver *Frontend019) BuildGetCaptchaResponse(resp *lemmyResponse.GetCaptchaResponse) any {
+	return resp
+}

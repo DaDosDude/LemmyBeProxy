@@ -296,7 +296,7 @@ func (receiver *PiefedBackend) Login(request *lemmyRequest.LoginRequest, headers
 	}
 
 	return &lemmyResponse.LoginResponse{
-		Jwt: resp.Jwt,
+		Jwt: helper.ToPointer(resp.Jwt),
 	}, nil
 }
 
@@ -504,4 +504,36 @@ func (receiver *PiefedBackend) ResolveObject(request *lemmyRequest.ResolveObject
 	}
 
 	return canonical, nil
+}
+
+func (receiver *PiefedBackend) GetCaptcha(headers appHttp.Headers) (*lemmyResponse.GetCaptchaResponse, error) {
+	return &lemmyResponse.GetCaptchaResponse{Ok: nil}, nil
+}
+
+// Register forwards to Piefed's own /user/register endpoint — see
+// PiefedUser.go's Register and dto/request/piefed/RegisterRequest.go
+// for a note on that path being an unverified assumption, not directly
+// source-verified against Piefed.
+func (receiver *PiefedBackend) Register(request *lemmyRequest.RegisterRequest, headers appHttp.Headers) (*lemmyResponse.LoginResponse, error) {
+	resp, err := receiver.client.Register(&piefedRequest.RegisterRequest{
+		Username:       request.Username,
+		Password:       request.Password,
+		PasswordVerify: request.PasswordVerify,
+		ShowNsfw:       request.ShowNsfw,
+		Email:          request.Email,
+		Answer:         request.ApplicationQuestionAnswer,
+	}, headers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &lemmyResponse.LoginResponse{
+		Jwt: resp.Jwt,
+		// A successful call means a registration was created — separate
+		// from whether Piefed grants an immediate JWT (nil here means
+		// the registration is pending admin approval, matching real
+		// Lemmy's own semantics for requireapplication mode).
+		RegistrationCreated: true,
+		VerifyEmailSent:     false,
+	}, nil
 }

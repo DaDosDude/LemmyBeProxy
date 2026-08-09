@@ -101,4 +101,6 @@ type Frontend interface {
 
 	ParseResolveObjectRequest(request *http.Request) (*lemmyRequest.ResolveObjectRequest, error)
 	BuildResolveObjectResponse(resp *lemmyResponse.ResolveObjectResponse) any
+
+	BuildGetCaptchaResponse(resp *lemmyResponse.GetCaptchaResponse) any
 }

@@ -17,6 +17,19 @@ func (receiver *Piefed) Login(request *piefedRequest.LoginRequest, headers appHt
 	)
 }
 
+// Register — path assumed to match Lemmy's own "/user/register" naming
+// 1:1, per every other endpoint's established convention. Not directly
+// source-verified against Piefed.
+func (receiver *Piefed) Register(request *piefedRequest.RegisterRequest, headers appHttp.Headers) (*piefedResponse.RegisterResponse, error) {
+	return defaultHandler[piefedResponse.RegisterResponse](
+		receiver,
+		"/user/register",
+		router.HttpMethodPost,
+		request,
+		headers,
+	)
+}
+
 func (receiver *Piefed) GetUnreadCount(headers appHttp.Headers) (*piefedResponse.GetUnreadCountResponse, error) {
 	return defaultHandler[piefedResponse.GetUnreadCountResponse](
 		receiver,

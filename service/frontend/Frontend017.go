@@ -473,3 +473,15 @@ func (receiver *Frontend017) BuildResolveObjectResponse(resp *lemmyResponse.Reso
 	}
 	return result
 }
+
+func (receiver *Frontend017) BuildGetCaptchaResponse(resp *lemmyResponse.GetCaptchaResponse) any {
+	result := &lemmyResponse017.GetCaptchaResponse{}
+	if resp.Ok != nil {
+		result.Ok = &lemmyResponse017.CaptchaResponse{
+			Png:  resp.Ok.Png,
+			Wav:  resp.Ok.Wav,
+			Uuid: resp.Ok.Uuid,
+		}
+	}
+	return result
+}

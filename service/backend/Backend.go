@@ -37,6 +37,7 @@ type Backend interface {
 	BlockCommunity(request *lemmyRequest.BlockCommunityRequest, headers http.Headers) (*lemmyResponse.BlockCommunityResponse, error)
 
 	Login(request *lemmyRequest.LoginRequest, headers http.Headers) (*lemmyResponse.LoginResponse, error)
+	Register(request *lemmyRequest.RegisterRequest, headers http.Headers) (*lemmyResponse.LoginResponse, error)
 	GetUnreadCount(headers http.Headers) (*lemmyResponse.GetUnreadCountResponse, error)
 	GetUser(request *lemmyRequest.GetUserRequest, headers http.Headers) (*lemmyResponse.GetUserResponse, error)
 	BlockPerson(request *lemmyRequest.BlockPersonRequest, headers http.Headers) (*lemmyResponse.BlockPersonResponse, error)
@@ -78,4 +79,12 @@ type Backend interface {
 	// resolved to. lemmyBB uses this to resolve every community listed
 	// in an admin's lemmybb_categories.hjson on the frontpage.
 	ResolveObject(request *lemmyRequest.ResolveObjectRequest, headers http.Headers) (*lemmyResponse.ResolveObjectResponse, error)
+
+	// GetCaptcha is called unconditionally by real Lemmy clients
+	// (lemmyBB included) loading the registration form, regardless of
+	// whether captcha is actually enabled for the site — a missing
+	// route here blocks registration entirely, not just captcha
+	// display. See GetCaptchaResponse's own comment for why this
+	// always returns Ok: nil.
+	GetCaptcha(headers http.Headers) (*lemmyResponse.GetCaptchaResponse, error)
 }

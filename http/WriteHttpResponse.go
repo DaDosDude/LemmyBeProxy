@@ -36,6 +36,23 @@ func WriteHttpResponse(response *Response, writer http.ResponseWriter) {
 		headers["Content-Type"] = "application/json"
 	}
 
+	// Every response this proxy sends represents live, constantly-changing
+	// forum data — nothing here should ever be cached by a downstream
+	// client. Confirmed this matters concretely, not just in principle:
+	// with no caching headers at all, a plain 200 OK is "cacheable by
+	// default" per the HTTP spec (see http-cache-semantics's
+	// is_storable()), so lemmyBB's own HTTP cache was storing every
+	// distinct response it ever received from this proxy, unbounded,
+	// eventually consuming gigabytes of memory and disk. Setting
+	// no-store here means is_storable() returns false outright — the
+	// entry is never written at all, fixing the actual root cause
+	// rather than just periodically clearing lemmyBB's cache after the
+	// fact.
+	_, ok = headers["Cache-Control"]
+	if !ok {
+		headers["Cache-Control"] = "no-store"
+	}
+
 	var err error
 	if _, ok = body.(string); !ok {
 		body, err = json.ToJson(body)

@@ -16,7 +16,7 @@ func init() {
 	commentController := controller.NewCommentController(activeBackend, activeFrontend)
 	communityController := controller.NewCommunityController(activeBackend, activeFrontend)
 	searchController := controller.NewSearchController(activeBackend, activeFrontend)
-	uploadController := controller.NewUploadController(activeBackend)
+	uploadController := controller.NewUploadController(activeBackend, imageHosts)
 
 	// implemented
 	AppRouter.AddRoute(newRoute("/user/login", router.HttpMethodPost, userController.Login))
@@ -53,6 +53,6 @@ func init() {
 	AppRouter.AddRoute(router.NewRoute("/pictrs/image", router.HttpMethodPost, uploadController.UploadImage))
 	AppRouter.AddRoute(router.NewRoute("/pictrs/image/{token}", router.HttpMethodGet, uploadController.ServeImage))
 
-	// impossible to implement, error pages only
+	// stub: always reports zero reports, no backend call
 	AppRouter.AddRoute(newRoute("/user/report_count", router.HttpMethodGet, userController.GetReportCount))
 }

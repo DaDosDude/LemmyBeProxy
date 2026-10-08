@@ -16,6 +16,20 @@ import (
 )
 
 func ConvertValidationErrorsToResponse(err error) *http.Response {
+	// A well-formed value of the wrong type (a string where a number
+	// belongs, a negative page into an unsigned field) is a client error,
+	// not a proxy failure — this used to fall through to a 500.
+	var typeError *json.UnmarshalTypeError
+	if errors.As(err, &typeError) {
+		return &http.Response{
+			StatusCode: goHttp.StatusBadRequest,
+			Body: lemmyResponse.NewErrorResponseWithMessage(
+				lemmyModel.ErrorCodeUnknown,
+				fmt.Sprintf("the value for field '%s' is invalid", typeError.Field),
+			),
+		}
+	}
+
 	var syntaxError *json.SyntaxError
 	ok := errors.As(err, &syntaxError)
 	if ok {

@@ -8,9 +8,13 @@ import (
 	lemmyService "LemmyBeProxy/service/lemmy"
 	piefedService "LemmyBeProxy/service/piefed"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
+	"strings"
+	"time"
 )
 
 var AppHttpPort = 8080
@@ -45,7 +49,31 @@ var activeFrontend frontend.Frontend
 // circular import back into this package from a lower-level one.
 var FrontendVersion string
 
+// imageHosts is the allowlist UploadController.ServeImage checks decoded
+// image URLs against: the backend's own host, plus any EXTRA_IMAGE_HOSTS
+// (comma-separated) for a backend that serves media from a separate
+// CDN/S3 host.
+var imageHosts []string
+
+// backendHost extracts the bare host[:port] from BACKEND_INSTANCE, which
+// may be a plain hostname ("retrofed.com") or carry an explicit scheme
+// ("http://lemmy-easy-deploy-lemmy-1:8536").
+func backendHost(instance string) string {
+	if strings.Contains(instance, "://") {
+		if parsed, err := url.Parse(instance); err == nil && parsed.Host != "" {
+			return parsed.Host
+		}
+	}
+	return strings.TrimSuffix(instance, "/")
+}
+
 func init() {
+	// Every outbound call (backend API, image upload, ActivityPub actor
+	// fetch) goes through http.DefaultClient, which has no timeout at
+	// all: one hung backend request held its goroutine and socket open
+	// forever. 60s comfortably covers a slow upload or resolve_object.
+	http.DefaultClient.Timeout = 60 * time.Second
+
 	if port, exists := os.LookupEnv("PORT"); exists {
 		parsed, err := strconv.Atoi(port)
 		if err != nil {
@@ -105,6 +133,11 @@ func init() {
 		panic(fmt.Sprintf("unknown FRONTEND_VERSION %q — expected \"0.19\" or \"0.17\"", frontendVersion))
 	}
 	FrontendVersion = frontendVersion
+
+	imageHosts = []string{backendHost(backendInstance)}
+	if extra, exists := os.LookupEnv("EXTRA_IMAGE_HOSTS"); exists {
+		imageHosts = append(imageHosts, strings.Split(extra, ",")...)
+	}
 
 	AppRouter = router.NewRouter()
 

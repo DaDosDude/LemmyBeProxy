@@ -107,8 +107,18 @@ func NewPiefed(instance string) *Piefed {
 	}
 }
 
+// baseURL defaults to https:// but, like the Lemmy client, honours an
+// explicit scheme in BACKEND_INSTANCE (e.g. "http://piefed-app:5000" to
+// reach the backend over an internal network).
+func (receiver *Piefed) baseURL() string {
+	if strings.HasPrefix(receiver.instance, "http://") || strings.HasPrefix(receiver.instance, "https://") {
+		return strings.TrimSuffix(receiver.instance, "/")
+	}
+	return "https://" + receiver.instance
+}
+
 func (receiver *Piefed) url() string {
-	return fmt.Sprintf("https://%s/api/alpha", receiver.instance)
+	return receiver.baseURL() + "/api/alpha"
 }
 
 func (receiver *Piefed) sendRequest(

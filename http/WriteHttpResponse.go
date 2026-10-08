@@ -54,7 +54,10 @@ func WriteHttpResponse(response *Response, writer http.ResponseWriter) {
 	}
 
 	var err error
-	if _, ok = body.(string); !ok {
+	if _, isBytes := body.([]byte); isBytes {
+		// Already-final raw content (e.g. proxied image bytes) — sent
+		// as-is rather than JSON-encoded into a base64 string.
+	} else if _, ok = body.(string); !ok {
 		body, err = json.ToJson(body)
 		if err != nil {
 			body, _ = json.ToJson(map[string]string{

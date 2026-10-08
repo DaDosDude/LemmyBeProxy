@@ -9,6 +9,7 @@ import (
 	"mime"
 	"mime/multipart"
 	goHttp "net/http"
+	"net/url"
 	"strings"
 )
 
@@ -19,13 +20,29 @@ import (
 // the resulting URL. Only the actual upload call is backend-specific.
 type UploadController struct {
 	backend backend.Backend
+	// allowedImageHosts is the set of hosts ServeImage will send a client
+	// to. Without it, any hex-encoded URL decoded into a 302 — an open
+	// redirect anyone could mint links for.
+	allowedImageHosts map[string]bool
 }
 
-func NewUploadController(backend backend.Backend) *UploadController {
+func NewUploadController(backend backend.Backend, allowedImageHosts []string) *UploadController {
+	hosts := make(map[string]bool)
+	for _, h := range allowedImageHosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h != "" {
+			hosts[h] = true
+		}
+	}
 	return &UploadController{
-		backend: backend,
+		backend:           backend,
+		allowedImageHosts: hosts,
 	}
 }
+
+// maxProxiedImageBytes caps how much ServeImage will buffer when it has
+// to stream an image itself rather than redirect.
+const maxProxiedImageBytes = 50 << 20
 
 // extractCookieJwt pulls the jwt value out of a raw Cookie header, since
 // mlmym authenticates its image upload via a Cookie (jwt=...) rather than
@@ -97,6 +114,13 @@ func (receiver *UploadController) UploadImage(request *http.Request) (*http.Resp
 
 	jwt := extractCookieJwt(request.Headers["Cookie"])
 	if jwt == "" {
+		// Newer clients send a Bearer header instead of mlmym's cookie.
+		jwt = strings.TrimPrefix(request.Headers["Authorization"], "Bearer ")
+		if jwt == request.Headers["Authorization"] {
+			jwt = ""
+		}
+	}
+	if jwt == "" {
 		return &http.Response{
 			StatusCode: goHttp.StatusUnauthorized,
 			Body:       map[string]string{"msg": "missing jwt cookie"},
@@ -138,14 +162,19 @@ func (receiver *UploadController) UploadImage(request *http.Request) (*http.Resp
 
 // ServeImage handles GET /pictrs/image/{token} — decodes the token mlmym
 // requests (built from what UploadImage returned) back into the real
-// image URL and redirects there. Against a Piefed backend, this is a
-// real, permanent limitation: since we redirect straight to Piefed's
-// original image, mlmym's thumbnail query params (?format=jpg&thumbnail=96)
-// have no effect — Piefed doesn't understand Lemmy's pict-rs thumbnailing
-// convention, so images display at full original size rather than being
-// resized down. Against a real Lemmy backend this isn't a limitation at
-// all — it's the same pict-rs software, so the thumbnail params redirect
-// straight through and work exactly as they would talking to Lemmy directly.
+// image URL.
+//
+// Only URLs on the configured backend's own host (plus EXTRA_IMAGE_HOSTS)
+// are served; anything else is a 404, so the endpoint can't be used as an
+// open redirect. The client's query string (pict-rs thumbnail params such
+// as ?format=jpg&thumbnail=96) is forwarded: real Lemmy's pict-rs honours
+// it, Piefed ignores it and serves the original size.
+//
+// An https:// URL is a normal 302 redirect. An http:// URL means the
+// backend was configured by its internal address (e.g.
+// http://lemmy-easy-deploy-lemmy-1:8536, to bypass NAT hairpin), which a
+// browser can't resolve — so the proxy fetches and streams the image
+// itself instead of redirecting to an unreachable host.
 func (receiver *UploadController) ServeImage(request *http.Request) (*http.Response, error) {
 	token := request.RouteParams["token"]
 	if idx := strings.LastIndex(token, "."); idx != -1 {
@@ -157,11 +186,56 @@ func (receiver *UploadController) ServeImage(request *http.Request) (*http.Respo
 		return http.NotFoundProxyError(), nil
 	}
 
+	target, err := url.Parse(string(decoded))
+	if err != nil || (target.Scheme != "http" && target.Scheme != "https") ||
+		!receiver.allowedImageHosts[strings.ToLower(target.Host)] {
+		return http.NotFoundProxyError(), nil
+	}
+
+	if len(request.QueryParams) > 0 {
+		query := target.Query()
+		for key, value := range request.QueryParams {
+			query.Set(key, value)
+		}
+		target.RawQuery = query.Encode()
+	}
+
+	if target.Scheme == "https" {
+		return &http.Response{
+			StatusCode: goHttp.StatusFound,
+			Headers: map[string]string{
+				"Location": target.String(),
+			},
+			Body: "",
+		}, nil
+	}
+
+	resp, err := goHttp.Get(target.String())
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != goHttp.StatusOK {
+		return http.NotFoundProxyError(), nil
+	}
+
+	imageBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxProxiedImageBytes))
+	if err != nil {
+		return nil, err
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = goHttp.DetectContentType(imageBytes)
+	}
+
 	return &http.Response{
-		StatusCode: goHttp.StatusFound,
+		StatusCode: goHttp.StatusOK,
 		Headers: map[string]string{
-			"Location": string(decoded),
+			"Content-Type": contentType,
+			// Uploaded images are immutable, unlike every API response.
+			"Cache-Control": "public, max-age=86400",
 		},
-		Body: "",
+		Body: imageBytes,
 	}, nil
 }

@@ -3,8 +3,8 @@ package main
 import (
 	"LemmyBeProxy/config"
 	lemmyModel "LemmyBeProxy/dto/model/lemmy"
-	"LemmyBeProxy/dto/response/piefed"
 	lemmyResponse "LemmyBeProxy/dto/response/lemmy"
+	"LemmyBeProxy/dto/response/piefed"
 	"LemmyBeProxy/helper"
 	appHttp "LemmyBeProxy/http"
 	"LemmyBeProxy/router"
@@ -76,14 +76,18 @@ func main() {
 			}
 		}
 
+		httpMethod, methodErr := router.HttpMethodFromString(request.Method)
+		if methodErr != nil {
+			// HEAD, TRACE, etc. — a client error, not a proxy failure.
+			appHttp.WriteHttpResponse(&appHttp.Response{
+				StatusCode: http.StatusMethodNotAllowed,
+				Body:       map[string]string{"error": "method not allowed"},
+			}, writer)
+			return
+		}
+
 		var result *appHttp.Response
 		for _, route := range config.AppRouter.Routes {
-			var httpMethod router.HttpMethod
-			httpMethod, err = router.HttpMethodFromString(request.Method)
-			if err != nil {
-				break
-			}
-
 			matches, params, errRoute := router.RouteMatches(route, httpMethod, request.URL.Path)
 			if errRoute != nil {
 				err = errRoute
@@ -138,7 +142,14 @@ func main() {
 		// and Frontend017 conversion has already produced its normal
 		// result, rather than being threaded through every individual
 		// converter — see that function's own comment for the reasoning.
-		if config.FrontendVersion == "0.17" {
+		//
+		// Only JSON-object bodies are rewritten. A string or []byte body
+		// is already final (a redirect's empty body, raw image bytes) —
+		// re-marshaling it turned "" into the two-character JSON string
+		// "\"\"" and would corrupt binary content.
+		_, isString := result.Body.(string)
+		_, isBytes := result.Body.([]byte)
+		if config.FrontendVersion == "0.17" && result.Body != nil && !isString && !isBytes {
 			marshaled, jsonErr := json.Marshal(result.Body)
 			if jsonErr == nil {
 				result.Body = string(helper.StripTimezoneSuffixes(marshaled))

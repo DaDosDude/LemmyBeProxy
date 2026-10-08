@@ -31,7 +31,7 @@ func (receiver *Piefed) UploadImage(fileBytes []byte, filename string, bearerTok
 
 	req, err := goHttp.NewRequest(
 		"POST",
-		fmt.Sprintf("https://%s/api/alpha/upload/image", receiver.instance),
+		receiver.url()+"/upload/image",
 		body,
 	)
 	if err != nil {

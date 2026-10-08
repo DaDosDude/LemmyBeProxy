@@ -4,6 +4,7 @@ import (
 	"LemmyBeProxy/helper"
 	"LemmyBeProxy/http"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 )
@@ -23,7 +24,9 @@ func HttpMethodFromString(method string) (HttpMethod, error) {
 	allowed := helper.MapSlice(
 		[]HttpMethod{HttpMethodGet, HttpMethodPost, HttpMethodPut, HttpMethodDelete, HttpMethodPatch},
 		func(in HttpMethod) string {
-			return method
+			// Was `return method` — comparing the input against itself,
+			// so every verb passed and lowercase verbs failed.
+			return string(in)
 		},
 	)
 	if !slices.Contains(allowed, strings.ToUpper(method)) {
@@ -39,10 +42,18 @@ type Route struct {
 	Path             string
 	HttpMethod       HttpMethod
 	ControllerMethod ControllerMethod
+	// pattern is compiled once here instead of on every request for
+	// every route (RouteMatches used to recompile each route's regex per
+	// request — ~30 compiles per incoming call).
+	pattern *regexp.Regexp
 }
 
 func NewRoute(path string, httpMethod HttpMethod, controller ControllerMethod) *Route {
-	return &Route{Path: path, ControllerMethod: controller, HttpMethod: httpMethod}
+	pattern, err := RegexifyRoute(path)
+	if err != nil {
+		panic(fmt.Sprintf("invalid route %q: %v", path, err))
+	}
+	return &Route{Path: path, ControllerMethod: controller, HttpMethod: httpMethod, pattern: pattern}
 }
 
 type Router struct {

@@ -119,6 +119,19 @@ func (c *TTLCache[V]) Set(key string, value V) {
 	}
 }
 
+// Delete removes key if present.
+func (c *TTLCache[V]) Delete(key string) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if el, ok := c.entries[key]; ok {
+		c.order.Remove(el)
+		delete(c.entries, key)
+	}
+}
+
 // Len returns the number of stored entries (including any not yet
 // lazily evicted after expiry).
 func (c *TTLCache[V]) Len() int {

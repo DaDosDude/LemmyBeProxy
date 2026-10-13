@@ -272,6 +272,47 @@ Trade-off: anonymous visitors can see community details (counts,
 description) up to one TTL old. Set `RESOLVE_OBJECT_CACHE_TTL=0` to
 disable.
 
+## Community resolve_object answered locally (Lemmy backend)
+
+With `BACKEND_TYPE=lemmy`, a `resolve_object` whose `q` is a community
+URL (`https://<host>/c/<name>`) is answered from Lemmy's own database
+when that community is already known there, without contacting the
+community's home instance.
+
+Why: real `resolve_object` — and `GET /community?name=...` as well —
+re-fetches a remote community from its home instance whenever it's
+more than a day stale *and the request is logged in* (Lemmy 0.19's
+`resolve_actor_identifier`). A slow or dead home instance turns that
+into a 10+ second stall per community, repeated on every logged-in
+lemmyBB index view (~79 resolves per page). Measured on retrolemmy:
+median 5 ms, but individual calls of 8–13 s.
+
+How:
+
+1. `name@host` is mapped to the local community id with an
+   *anonymous* `GET /community?name=name@host` (anonymous lookups never
+   refetch). The id is remembered; ids never change.
+2. `GET /community?id=<id>` with the caller's own credentials returns
+   the community with correct per-user state (subscribed, blocked).
+   Lookups by id never fetch remotely.
+3. The result is returned in `resolve_object`'s shape,
+   `{"community": <community_view>}`, translated for the configured
+   `FRONTEND_VERSION` as usual.
+
+If the community isn't in the local database, or the matched
+community's `actor_id` isn't the URL that was asked for, the proxy
+falls back to the real `resolve_object` — which is still how a
+not-yet-known community gets federated in. Post, comment and user
+URLs always use the real `resolve_object`.
+
+Trade-off: known remote communities are no longer refreshed from
+their home instance by this call, so their details can stay as stale
+as Lemmy's own copy. Lemmy still updates them through normal
+federation.
+
+The anonymous `resolve_object` cache (above) sits in front of this,
+so a cached anonymous request makes no backend call at all.
+
 ## Environment variables
 
 | Variable | Required | Description |

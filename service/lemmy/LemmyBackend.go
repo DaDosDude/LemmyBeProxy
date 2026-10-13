@@ -1,6 +1,7 @@
 package lemmy
 
 import (
+	"LemmyBeProxy/cache"
 	lemmyRequest "LemmyBeProxy/dto/request/lemmy"
 	lemmyResponse "LemmyBeProxy/dto/response/lemmy"
 	appHttp "LemmyBeProxy/http"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"mime/multipart"
 	goHttp "net/http"
+	"time"
 )
 
 // LemmyBackend implements the backend.Backend interface against a real
@@ -23,10 +25,18 @@ import (
 // gets the request exactly as the client sent it.
 type LemmyBackend struct {
 	client *Lemmy
+	// communityIDs maps "name@host" to the local community id, so a
+	// community-URL resolve_object can be answered with a single
+	// GET /community?id=... — see LemmyResolveCommunity.go. Ids never
+	// change; the long TTL only bounds staleness for purged communities.
+	communityIDs *cache.TTLCache[uint]
 }
 
 func NewLemmyBackend(client *Lemmy) *LemmyBackend {
-	return &LemmyBackend{client: client}
+	return &LemmyBackend{
+		client:       client,
+		communityIDs: cache.New[uint](24*time.Hour, 10000),
+	}
 }
 
 func (receiver *LemmyBackend) GetPosts(request *lemmyRequest.GetPostsRequest, headers appHttp.Headers) (*lemmyResponse.GetPostsResponse, error) {
@@ -198,7 +208,14 @@ func (receiver *LemmyBackend) GetPrivateMessages(request *lemmyRequest.GetPrivat
 	return defaultHandler[lemmyResponse.GetPrivateMessagesResponse](receiver.client, "/private_message/list", router.HttpMethodGet, request, headers)
 }
 
+// ResolveObject answers community URLs from the local database when the
+// community is already known (see resolveCommunityLocally), and only
+// falls back to real resolve_object — which may fetch from the remote
+// instance — for everything else.
 func (receiver *LemmyBackend) ResolveObject(request *lemmyRequest.ResolveObjectRequest, headers appHttp.Headers) (*lemmyResponse.ResolveObjectResponse, error) {
+	if resp, ok := receiver.resolveCommunityLocally(request.Q, headers); ok {
+		return resp, nil
+	}
 	return defaultHandler[lemmyResponse.ResolveObjectResponse](receiver.client, "/resolve_object", router.HttpMethodGet, request, headers)
 }
 

@@ -1,52 +1,20 @@
 # LemmyBeProxy
 
-A simple proxy that acts as a compatibility layer for Lemmy apps against Piefed and newer versions of Lemmy.
+A proxy that lets Lemmy clients (mlmym, lemmyBB, Voyager, Alexandrite,
+official apps) talk to a PieFed instance or a different Lemmy version.
+It serves Lemmy's API at `/api/v3/*` and `/pictrs/image`, and translates
+each request to whatever backend sits behind it.
 
-It sits in front of a configurable backend and speaks Lemmy's API to
-whatever's talking to it, regardless of what's actually behind it or how
-old the client is. Any Lemmy-compatible app or frontend (mlmym,
-Alexandrite, Voyager, official Lemmy apps, lemmyBB, and so on) can talk
-to this proxy without knowing or caring what it's really connected to.
-
-The goal is a genuine compatibility layer across Lemmy API generations —
-not just Piefed vs. real Lemmy, but old clients against new backends and
-vice versa, so nothing breaks outright just because either side moved
-forward. That work is ongoing; see Features below for exactly where it
-currently stands.
-
-## How it works
-
-```mermaid
-sequenceDiagram
-    actor User
-    participant Client as Lemmy client
-    participant Proxy as LemmyBeProxy
-    participant Backend as Configured backend
-
-    User->>Client: Visit a page using a Lemmy client
-    Client->>Proxy: Send request to proxy
-    Proxy->>Backend: Transform to backend's request shape
-    Backend->>Proxy: Return backend response
-    Proxy->>Client: Transform to the client's expected shape
-    Client->>User: User sees content as if on Lemmy
-```
-
-The proxy exposes Lemmy's API at `/api/v3/*` and image uploads at
-`/pictrs/image`, the same paths a real Lemmy server uses. Internally,
-`BACKEND_TYPE` picks what it talks to and `FRONTEND_VERSION` picks the
-wire format it accepts from and replies to clients with — the two are
-independent, and neither takes a default. Against a real Lemmy backend
-on the current wire format, translation is close to a no-op, since this
-proxy's internal shapes are already modeled on Lemmy's own API.
+- **Backends:** PieFed (`/api/alpha`) or real Lemmy.
+- **Client wire formats:** Lemmy 0.19 (current) and 0.17 (e.g. lemmyBB),
+  plus 0.18-style `auth` in the body or query string.
 
 ## Quick start
 
 ```
 docker build -t lemmybeproxy .
 
-docker run -d \
-  --name lemmybeproxy \
-  --restart unless-stopped \
+docker run -d --name lemmybeproxy --restart unless-stopped \
   -p 127.0.0.1:8050:8080 \
   -e BACKEND_TYPE=piefed \
   -e BACKEND_INSTANCE=your-instance.example \
@@ -54,330 +22,77 @@ docker run -d \
   lemmybeproxy
 ```
 
-`BACKEND_TYPE` is `piefed` or `lemmy`; `BACKEND_INSTANCE` is that
-backend's hostname (or a full internal URL — see Environment variables).
-`FRONTEND_VERSION` is `0.19`
-(current Lemmy wire format) or `0.17` (older format, e.g. lemmyBB). All
-three are required — see Environment variables for the full list.
+Then point your reverse proxy's `/api/v3/*` and `/pictrs/image*` routes
+at the container, and everything else at your frontend (e.g. mlmym).
+Nginx and Caddy examples are in [DEPLOYMENT.md](DEPLOYMENT.md).
 
-Point a reverse proxy's `/api/v3/*` and `/pictrs/image*` routes at this
-container, and everything else at your actual frontend (e.g. mlmym).
-Nginx and Caddy examples, plus the full walkthrough including automatic
-updates via Watchtower, are in [DEPLOYMENT.md](DEPLOYMENT.md).
-
-Verify it's working:
+Check it works:
 
 ```
-curl -s "https://your-domain.example/api/v3/site" | head -c 200
+curl -s https://your-domain.example/api/v3/site | head -c 200
 ```
 
-## Features
-
-**Backends** — what this proxy can translate *to*:
-- Piefed, via `/api/alpha/*`
-- Real Lemmy, close to a passthrough since the shapes already match
-
-**Frontend / wire compatibility** — what this proxy can accept *from* clients:
-- Lemmy 0.19.x (current) — full coverage
-- Lemmy 0.18.x authentication convention (`auth` in the request body or
-  query string instead of an `Authorization` header) — applied centrally
-  to every route, not endpoint-specific
-- Lemmy 0.17.x wire format (e.g. lemmyBB) — Post, Comment, Community,
-  User, Search, and Site endpoints, all verified against Lemmy's real
-  0.17.2 source *and* confirmed end-to-end against the real, official,
-  unmodified lemmyBB client — not just source-level checking. `pictrs/image`
-  needs no version-specific handling at all and works as-is — confirmed
-  directly against lemmyBB's own upload code, which uses the identical
-  field name and response shape. That's full 0.17.x coverage of every
-  endpoint this proxy implements.
-
-**Backend pluggability is done — every endpoint this proxy implements
-works against either Piefed or real Lemmy.** No controller is left
-hardcoded to a Piefed-shaped client.
-
-**Frontend pluggability (0.17.x wire format) is done too — every
-endpoint this proxy implements works on both wire formats.** Upload
-doesn't need Frontend-axis work at all, since `pictrs/image` is
-version-agnostic by nature. Both axes — which backend, and which wire
-format — are now genuinely independent and fully covered for the entire
-API surface this proxy implements.
-
-**Endpoints implemented and tested against live Piefed and real Lemmy
-instances:** `user/login`, `user/register`, `user/get_captcha`,
-`user/unread_count`, `user`, `user/block`,
-`user/save_user_settings` (Piefed only supports a subset of fields — see
-Features not working yet), `user/mention`, `user/replies`,
-`private_message/list` (Piefed has no equivalent for these three —
-returns an honest empty list rather than a 404, see Features not
-working yet), `site`, `resolve_object`, `post/list`, `post`
-(get/create/edit), `post/like`, `post/mark_as_read`, `comment/list`,
-`comment` (get/create), `comment/like`, `community`, `community/list`,
-`community/follow`, `community/block`, `search`, `pictrs/image` (upload
-and fetch, outside `/api/v3` since that's where real clients send them).
-
-## Features not working yet
-
-**Not implemented in Piefed itself**, confirmed from Piefed's own source
-— not a translation gap, there's nothing on Piefed's side to translate
-to: report count, password reset/change, TOTP, account
-deletion, email verification, admin tools, custom emoji.
-
-**Known limitations:**
-- Image thumbnails always load at full resolution — Piefed ignores the
-  `?format=jpg&thumbnail=96`-style query params real pict-rs understands.
-- `save_user_settings` silently drops fields Piefed has no equivalent
-  for (most notably mlmym's "endless scrolling," which can never persist
-  server-side against Piefed) rather than failing the whole save.
-- `user/mention`, `user/replies`, and `private_message/list` always
-  return an empty list against Piefed — Piefed has unread *counts* for
-  these but no equivalent endpoint to fetch the actual items in the same
-  shape Lemmy has them. Real Lemmy backends return the genuine list.
-  Returning empty rather than 404 matters concretely: a 404 here is
-  exactly what crashes a real Lemmy client (lemmyBB included), since
-  these are fetched on every authenticated page load.
-- `resolve_object` (used by lemmyBB's frontpage category configuration,
-  among other things) only resolves *remote/federated* objects when the
-  request is authenticated — confirmed as genuine Lemmy API behavior,
-  not a proxy limitation. A community you're personally subscribed to
-  resolves fine for you, but won't resolve for anonymous visitors unless
-  it's local to the instance you're querying.
-- `user/get_captcha` always returns no captcha required against Piefed —
-  Piefed has no image/audio captcha system to forward to, so this is an
-  honest "none needed" rather than a faked one. Real Lemmy backends
-  return a genuine captcha challenge when the instance has one enabled
-  (confirmed against retrolemmy.com, which does).
-- 0.17.x `mark_as_read` returns the canonical `{success: bool}` shape
-  instead of real 0.17.x's `PostResponse{post_view}` — building the
-  latter needs an extra backend round-trip, deferred rather than rushed.
-- 0.17.x comment responses don't echo back a client's `form_id` (used
-  for optimistic-UI correlation) — accepted on requests, not threaded
-  through to responses yet.
-
-**Real interop lessons**, found by testing against actual live
-software — a real client (lemmyBB) and a real backend (retrolemmy.com)
-— not just checking source-level shapes, which alone wasn't enough to
-catch these:
-- Real Lemmy's own pict-rs returns `201 Created` for a successful image
-  upload, not `200 OK` — `LemmyBackend.UploadImage` only accepted 200
-  at first, silently treating every successful upload as a failure
-  against a real Lemmy backend specifically (Piefed's own upload
-  behavior happened to return 200, which is why this went unnoticed
-  until testing against retrolemmy.com directly).
-- Timestamps must not carry a timezone suffix for 0.17.x — real Lemmy
-  0.17.x uses `chrono::NaiveDateTime` (no timezone concept) throughout,
-  and its deserializer errors on one if present. See
-  `helper.StripTimezoneSuffixes`.
-- `Option<T>` fields in Rust's `#[derive(Deserialize)]` still require
-  the JSON *key* to be present (as `null`) unless the struct opts into
-  `#[serde(default)]`, which none of Lemmy's real structs do — a missing
-  key isn't the same as a `null` value here. Affects every 0.17-shaped
-  type with an optional field.
-- `RegistrationMode` is the one enum in Lemmy 0.17.2 with
-  `#[serde(rename_all = "lowercase")]` — its wire values are lowercase,
-  unlike every other enum in the API, which uses standard PascalCase.
-- A response's `Content-Length` header needs to be set explicitly —
-  without it, Go's server defaults to `Transfer-Encoding: chunked`,
-  which Rust's `reqwest` (lemmyBB's HTTP client) read as truncated even
-  though `curl` read the identical response correctly. See
-  `WriteHttpResponse`.
-- A required timestamp field populated with a placeholder empty string
-  (rather than real or reasonably-derived data) fails outright on a
-  strict Rust deserializer — `Site.LastRefreshedAt` was previously left
-  as `""` with a `// todo`; it now derives from the ActivityPub actor's
-  own `updated`/`published` timestamp instead. See `ConvertSite`.
-- A response field genuinely absent in some real cases needs to be
-  modeled as a pointer, not a plain value with an empty-string
-  convention — `LoginResponse.Jwt` is `Option<String>` in real Lemmy,
-  since registration can succeed without an immediate JWT when an
-  application needs admin approval first (retrolemmy.com's own
-  `requireapplication` mode is a live example).
-- A field's real Rust type isn't always what its name suggests — real
-  Lemmy's `PostAggregates.unread_comments` is a signed `i64`, not
-  unsigned, and genuinely sends `-1` in a real edge case (confirmed: an
-  old post in retrolemmy.com's own `general` community). It's a
-  per-user field only calculated when logged in, so an unsigned type
-  here crashed with "internal lemmy layer proxy error" specifically for
-  authenticated requests — anonymous requests never triggered it,
-  making this easy to miss without testing both states live.
-
-## Client IP forwarding
-
-Every request this proxy makes to the backend carries the real
-visitor's IP, so the backend rate-limits each visitor separately.
-Without it, everyone reaching the backend through this proxy (an
-mlmym or lemmyBB frontend, apps on `/api/v3`) arrives from the proxy's
-own address and shares one rate-limit bucket — a single crawler can
-exhaust it and get the backend to return 429 to every user at once.
-
-How the visitor IP is chosen, for every endpoint, both backends and
-both wire formats:
-
-- **`X-Real-IP` on the incoming request** is used if present and a
-  valid IP. Your front proxy must set it to the real remote address
-  (Caddy: `header_up X-Real-IP {client_ip}`; nginx:
-  `proxy_set_header X-Real-IP $remote_addr;`). mlmym forwards its own
-  caller's `X-Real-IP` on its API calls.
-- **Otherwise, the direct caller's address** (the TCP peer) is used —
-  the same thing the backend saw before this feature existed.
-- **A client-supplied `X-Forwarded-For` or `Forwarded` is never
-  trusted.** Anyone calling `/api/v3` can put any address in them.
-
-On the outgoing request, `X-Real-IP` and `X-Forwarded-For` are both set
-to that single address, and any incoming `Forwarded` header is removed.
-`X-Forwarded-For` is replaced rather than appended to on purpose: real
-Lemmy (actix-web) takes the client address from `Forwarded`, then from
-the *leftmost* `X-Forwarded-For` entry, and ignores `X-Real-IP` — so
-appending to a client-supplied chain would let any caller choose the IP
-Lemmy rate-limits on. Backends that read `X-Real-IP` get the same
-address.
-
-Two deployment requirements for this to work end to end:
-
-- **Don't expose this proxy's port directly.** `X-Real-IP` is only
-  trustworthy because the front proxy overwrites it. Bind to
-  `127.0.0.1` or a private Docker network, as in Quick start.
-- **If `BACKEND_INSTANCE` points at a public domain**, the reverse
-  proxy in front of the backend sees this proxy as the client and will
-  overwrite or discard these headers unless it trusts this proxy's
-  address (Caddy: `trusted_proxies` for the Docker bridge range, and
-  `{client_ip}` instead of `{remote_host}`). Pointing
-  `BACKEND_INSTANCE` at the backend's internal address avoids this.
-
-## resolve_object caching
-
-Anonymous `resolve_object` responses are cached in memory. lemmyBB
-resolves every community on its index page on every view — 60-80
-backend calls per page — and since it doesn't forward visitor IPs, all
-of them land in a single backend rate-limit bucket. With the cache,
-repeat views within the TTL make no backend calls at all.
-
-- **Anonymous requests only** — no `Authorization` header (including
-  one built from a legacy `auth` parameter) and no `Cookie`.
-  Authenticated responses carry per-user state (`subscribed`,
-  `blocked`, and so on) and always go straight to the backend, so
-  logged-in users never see anyone else's state, and anonymous users
-  never see a logged-in user's.
-- **Successful responses only** — errors (including the backend's own
-  rate-limit errors) are never cached, so the next request retries.
-- **Keyed by backend and `q`**, with a TTL (default 10 minutes, with up
-  to 10% jitter so a page's entries don't all expire at once) and a
-  bounded entry count (least recently used evicted first).
-- **Concurrent misses are collapsed** — several anonymous requests for
-  the same uncached `q` at once make one backend call, not one each.
-- Responses served through the cache carry `X-Proxy-Cache: HIT` or
-  `MISS`; uncached (authenticated or disabled) responses have no such
-  header.
-
-Trade-off: anonymous visitors can see community details (counts,
-description) up to one TTL old. Set `RESOLVE_OBJECT_CACHE_TTL=0` to
-disable.
-
-## Community resolve_object answered locally (Lemmy backend)
-
-With `BACKEND_TYPE=lemmy`, a `resolve_object` whose `q` is a community
-URL (`https://<host>/c/<name>`) is answered from Lemmy's own database
-when that community is already known there, without contacting the
-community's home instance.
-
-Why: real `resolve_object` — and `GET /community?name=...` as well —
-re-fetches a remote community from its home instance whenever it's
-more than a day stale *and the request is logged in* (Lemmy 0.19's
-`resolve_actor_identifier`). A slow or dead home instance turns that
-into a 10+ second stall per community, repeated on every logged-in
-lemmyBB index view (~79 resolves per page). Measured on retrolemmy:
-median 5 ms, but individual calls of 8–13 s.
-
-How:
-
-1. `name@host` is mapped to the local community id with an
-   *anonymous* `GET /community?name=name@host` (anonymous lookups never
-   refetch). The id is remembered; ids never change.
-2. `GET /community?id=<id>` with the caller's own credentials returns
-   the community with correct per-user state (subscribed, blocked).
-   Lookups by id never fetch remotely.
-3. The result is returned in `resolve_object`'s shape,
-   `{"community": <community_view>}`, translated for the configured
-   `FRONTEND_VERSION` as usual.
-
-If the community isn't in the local database, or the matched
-community's `actor_id` isn't the URL that was asked for, the proxy
-falls back to the real `resolve_object` — which is still how a
-not-yet-known community gets federated in. Post, comment and user
-URLs always use the real `resolve_object`.
-
-Trade-off: known remote communities are no longer refreshed from
-their home instance by this call, so their details can stay as stale
-as Lemmy's own copy. Lemmy still updates them through normal
-federation.
-
-The anonymous `resolve_object` cache (above) sits in front of this,
-so a cached anonymous request makes no backend call at all.
-
-## Environment variables
+## Configuration
 
 | Variable | Required | Description |
 |---|---|---|
-| `BACKEND_TYPE` | Yes | `piefed` or `lemmy`. No default. |
-| `BACKEND_INSTANCE` | Yes | Hostname of the backend, no trailing slash. Defaults to `https://`. Can instead be given a full `http://` or `https://` URL to reach an internal address directly (e.g. `http://lemmy:8536` on the backend's own Docker network) — bypasses a public domain's reverse proxy and whatever's in front of it (anti-abuse layers, CDNs) entirely. Useful when the proxy runs on the same host/network as the real backend; see Troubleshooting for why this can matter. |
-| `FRONTEND_VERSION` | Yes | `0.19` or `0.17`. No default. |
-| `PORT` | No | Port to listen on. Defaults to `8080`. |
-| `RESOLVE_OBJECT_CACHE_TTL` | No | Seconds to cache anonymous `resolve_object` responses. Defaults to `600`; `0` disables the cache. See resolve_object caching. |
-| `RESOLVE_OBJECT_CACHE_SIZE` | No | Maximum cached `resolve_object` entries (least recently used evicted first). Defaults to `2000`. |
-| `SIMULATE` | No | If set, the proxy presents itself as a Lemmy server when asked for version/software info. |
+| `BACKEND_TYPE` | Yes | `piefed` or `lemmy`. |
+| `BACKEND_INSTANCE` | Yes | Backend hostname (`https://` assumed), or a full URL such as `http://lemmy:8536` to reach it directly on its internal Docker network. |
+| `FRONTEND_VERSION` | Yes | `0.19` or `0.17` — the wire format your clients speak. |
+| `PORT` | No | Listen port. Default `8080`. |
+| `SIMULATE` | No | Report itself as a Lemmy server in version info. |
+| `RESOLVE_OBJECT_CACHE_TTL` | No | Seconds to cache anonymous `resolve_object` results. Default `600`, `0` disables. |
+| `RESOLVE_OBJECT_CACHE_SIZE` | No | Max cached `resolve_object` entries. Default `2000`. |
+| `EXTRA_IMAGE_HOSTS` | No | Comma-separated extra hosts allowed for `/pictrs/image` redirects (e.g. a separate media/CDN host). |
 
-mlmym (or whatever frontend you run alongside this) has its own env
-vars, including `LEMMY_DOMAIN`, `COLLAPSE_MEDIA`, `HIDE_THUMBNAILS` — see
-that project's own documentation.
+## Reverse proxy requirements
+
+- **Set `X-Real-IP` to the visitor's address** (Caddy:
+  `header_up X-Real-IP {client_ip}`; nginx:
+  `proxy_set_header X-Real-IP $remote_addr;`). The proxy forwards it to
+  the backend as `X-Real-IP` and `X-Forwarded-For`, so the backend
+  rate-limits per visitor instead of treating everyone as one client.
+  Client-supplied `X-Forwarded-For`/`Forwarded` headers are ignored.
+- **Don't expose the container port publicly.** Bind it to `127.0.0.1`
+  or a private network, so `X-Real-IP` can only come from your proxy.
+- **If `BACKEND_INSTANCE` is a public domain**, the reverse proxy in
+  front of the backend must trust this proxy's address (Caddy:
+  `trusted_proxies`), or it overwrites the visitor IP. Using the
+  backend's internal address avoids this.
+
+## Behaviour worth knowing
+
+- **Anonymous `resolve_object` results are cached** (see the TTL
+  setting). Requests with an `Authorization` header or a cookie are
+  never cached. Cached responses carry `X-Proxy-Cache: HIT`/`MISS`.
+- **Lemmy backend:** a `resolve_object` for a community URL that Lemmy
+  already knows is answered from its database, without contacting the
+  community's home instance. Unknown communities, posts and users still
+  use the real `resolve_object`.
+- **Images** uploaded through `/pictrs/image` are served by redirecting
+  to the backend; with an internal `http://` backend address the proxy
+  streams them itself.
+
+## Known limitations
+
+- **PieFed:** `user/mention`, `user/replies` and `private_message/list`
+  return empty lists; `save_user_settings` drops fields PieFed doesn't
+  have; no captcha, report counts, password reset, TOTP or account
+  deletion; image thumbnails load at full size.
+- **0.17 clients:** `mark_as_read` returns `{success}` instead of a post;
+  `form_id` isn't echoed back.
+- **Clients that don't send `X-Real-IP`** (e.g. lemmyBB's server-side
+  calls) reach the backend as one client and share its rate limit.
+- **Remote objects** resolve only for logged-in users (Lemmy's own rule).
 
 ## Troubleshooting
 
-**Requests to the backend fail or get rate-limited for no obvious
-reason, even though the exact same request works fine from elsewhere**
-— if the proxy runs on the same server as the backend itself, and
-`BACKEND_INSTANCE` is set to that server's own public domain, outbound
-requests can hairpin through the host's own public IP and get treated
-as suspicious by the site's own anti-abuse layer — confirmed
-reproducible with plain `curl`, nothing specific to this proxy's
-client. Point `BACKEND_INSTANCE` at the backend's internal address
-directly instead (e.g. `http://lemmy:8536` on its own Docker network) —
-see the `BACKEND_INSTANCE` row above.
-
-**Every user gets rate-limited at once (HTTP 429 from the backend)** —
-the backend is seeing all proxied traffic as one client. Check what
-address actually reaches it: the front proxy must set `X-Real-IP`, and
-any reverse proxy between this proxy and the backend must trust this
-proxy's address instead of overwriting the header — see Client IP
-forwarding.
-
-**Parse error mentioning an invalid character around byte `0x1f`** — a
-gzip-compressed response got handed to the JSON parser undecompressed.
-Caused by forwarding a client's own `Accept-Encoding` header onto the
-outbound request, which disables Go's automatic gzip handling. This
-project already strips that header before forwarding; keep that in mind
-if you add new outbound requests elsewhere.
-
-**Frontend is slow on every page load**, despite the API responding
-fast when tested directly — the frontend container is likely reaching
-its own API calls by round-tripping out to the public internet instead
-of staying local. Fixed with `--add-host yourdomain.com:host-gateway`
-on the frontend container — see DEPLOYMENT.md.
-
-**A specific sort or listing combination fails or is unusually slow** —
-Piefed validates sort values per endpoint, and the valid set differs
-between them (community listing accepts fewer values than post
-listing, for example). Check Piefed's own error message for what's
-actually valid on that specific endpoint.
-
-**Build fails with a `slices` package / GOROOT error** — an old Go
-toolchain is active, usually one installed via a distro package manager
-instead of the official binary. Needs Go 1.24+; check `go version`.
-
-## Contributing
-
-This project translates between APIs that are similar but not
-identical, and the real gaps are usually only discoverable by testing
-against a live instance and comparing actual response shapes and
-validation rules to what the code assumes — this project's own history
-includes cases where a schema's own documentation didn't match what its
-API validated at runtime. If you add an endpoint, test it live before
-trusting the schema alone.
+- **Everyone gets HTTP 429 at once:** the backend sees all proxied
+  traffic as one client — see Reverse proxy requirements.
+- **Backend requests fail or get blocked from the same host:** point
+  `BACKEND_INSTANCE` at the backend's internal address instead of its
+  public domain.
+- **Slow frontend on every page:** the frontend container is reaching
+  the API via the public internet; use `--add-host
+  yourdomain:host-gateway` (see DEPLOYMENT.md).
+- **Build fails with a `slices`/GOROOT error:** needs Go 1.24+.

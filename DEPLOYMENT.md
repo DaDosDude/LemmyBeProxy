@@ -127,20 +127,20 @@ old.yourdomain.com {
         handle /api/v3/* {
                 reverse_proxy localhost:8050 {
                         header_up Host {host}
-                        header_up X-Real-IP {remote_host}
+                        header_up X-Real-IP {client_ip}
                         header_up X-Forwarded-Proto https
                 }
         }
         handle /pictrs/image* {
                 reverse_proxy localhost:8050 {
                         header_up Host {host}
-                        header_up X-Real-IP {remote_host}
+                        header_up X-Real-IP {client_ip}
                         header_up X-Forwarded-Proto https
                 }
         }
         reverse_proxy localhost:8051 {
                 header_up Host {host}
-                header_up X-Real-IP {remote_host}
+                header_up X-Real-IP {client_ip}
                 header_up X-Forwarded-Proto https
         }
 }

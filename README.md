@@ -243,6 +243,35 @@ Two deployment requirements for this to work end to end:
   `{client_ip}` instead of `{remote_host}`). Pointing
   `BACKEND_INSTANCE` at the backend's internal address avoids this.
 
+## resolve_object caching
+
+Anonymous `resolve_object` responses are cached in memory. lemmyBB
+resolves every community on its index page on every view — 60-80
+backend calls per page — and since it doesn't forward visitor IPs, all
+of them land in a single backend rate-limit bucket. With the cache,
+repeat views within the TTL make no backend calls at all.
+
+- **Anonymous requests only** — no `Authorization` header (including
+  one built from a legacy `auth` parameter) and no `Cookie`.
+  Authenticated responses carry per-user state (`subscribed`,
+  `blocked`, and so on) and always go straight to the backend, so
+  logged-in users never see anyone else's state, and anonymous users
+  never see a logged-in user's.
+- **Successful responses only** — errors (including the backend's own
+  rate-limit errors) are never cached, so the next request retries.
+- **Keyed by backend and `q`**, with a TTL (default 10 minutes, with up
+  to 10% jitter so a page's entries don't all expire at once) and a
+  bounded entry count (least recently used evicted first).
+- **Concurrent misses are collapsed** — several anonymous requests for
+  the same uncached `q` at once make one backend call, not one each.
+- Responses served through the cache carry `X-Proxy-Cache: HIT` or
+  `MISS`; uncached (authenticated or disabled) responses have no such
+  header.
+
+Trade-off: anonymous visitors can see community details (counts,
+description) up to one TTL old. Set `RESOLVE_OBJECT_CACHE_TTL=0` to
+disable.
+
 ## Environment variables
 
 | Variable | Required | Description |
@@ -251,6 +280,8 @@ Two deployment requirements for this to work end to end:
 | `BACKEND_INSTANCE` | Yes | Hostname of the backend, no trailing slash. Defaults to `https://`. Can instead be given a full `http://` or `https://` URL to reach an internal address directly (e.g. `http://lemmy:8536` on the backend's own Docker network) — bypasses a public domain's reverse proxy and whatever's in front of it (anti-abuse layers, CDNs) entirely. Useful when the proxy runs on the same host/network as the real backend; see Troubleshooting for why this can matter. |
 | `FRONTEND_VERSION` | Yes | `0.19` or `0.17`. No default. |
 | `PORT` | No | Port to listen on. Defaults to `8080`. |
+| `RESOLVE_OBJECT_CACHE_TTL` | No | Seconds to cache anonymous `resolve_object` responses. Defaults to `600`; `0` disables the cache. See resolve_object caching. |
+| `RESOLVE_OBJECT_CACHE_SIZE` | No | Maximum cached `resolve_object` entries (least recently used evicted first). Defaults to `2000`. |
 | `SIMULATE` | No | If set, the proxy presents itself as a Lemmy server when asked for version/software info. |
 
 mlmym (or whatever frontend you run alongside this) has its own env

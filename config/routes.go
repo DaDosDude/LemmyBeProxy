@@ -11,7 +11,7 @@ func newRoute(path string, method router.HttpMethod, controller router.Controlle
 
 func init() {
 	userController := controller.NewUserController(activeBackend, activeFrontend)
-	siteController := controller.NewSiteController(activeBackend, activeFrontend)
+	siteController := controller.NewSiteController(activeBackend, activeFrontend, resolveObjectCache, resolveCacheKeyPrefix)
 	postController := controller.NewPostController(activeBackend, activeFrontend)
 	commentController := controller.NewCommentController(activeBackend, activeFrontend)
 	communityController := controller.NewCommunityController(activeBackend, activeFrontend)

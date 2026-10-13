@@ -1,6 +1,8 @@
 package config
 
 import (
+	"LemmyBeProxy/cache"
+	lemmyResponse "LemmyBeProxy/dto/response/lemmy"
 	"LemmyBeProxy/router"
 	"LemmyBeProxy/service"
 	"LemmyBeProxy/service/backend"
@@ -48,6 +50,26 @@ var activeFrontend frontend.Frontend
 // if present) without main needing its own copy of this logic or a
 // circular import back into this package from a lower-level one.
 var FrontendVersion string
+
+// resolveObjectCache caches anonymous resolve_object responses (nil when
+// RESOLVE_OBJECT_CACHE_TTL=0). resolveCacheKeyPrefix scopes its keys to
+// the configured backend.
+var resolveObjectCache *cache.TTLCache[*lemmyResponse.ResolveObjectResponse]
+var resolveCacheKeyPrefix string
+
+// envInt reads a non-negative integer env var, falling back to def when
+// unset. An invalid value panics at startup like every other bad config.
+func envInt(name string, def int) int {
+	raw, exists := os.LookupEnv(name)
+	if !exists || strings.TrimSpace(raw) == "" {
+		return def
+	}
+	value, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil || value < 0 {
+		panic(fmt.Sprintf("%s must be a non-negative integer, got %q", name, raw))
+	}
+	return value
+}
 
 // imageHosts is the allowlist UploadController.ServeImage checks decoded
 // image URLs against: the backend's own host, plus any EXTRA_IMAGE_HOSTS
@@ -133,6 +155,12 @@ func init() {
 		panic(fmt.Sprintf("unknown FRONTEND_VERSION %q — expected \"0.19\" or \"0.17\"", frontendVersion))
 	}
 	FrontendVersion = frontendVersion
+
+	resolveObjectCache = cache.New[*lemmyResponse.ResolveObjectResponse](
+		time.Duration(envInt("RESOLVE_OBJECT_CACHE_TTL", 600))*time.Second,
+		envInt("RESOLVE_OBJECT_CACHE_SIZE", 2000),
+	)
+	resolveCacheKeyPrefix = backendType + "|" + backendInstance + "|"
 
 	imageHosts = []string{backendHost(backendInstance)}
 	if extra, exists := os.LookupEnv("EXTRA_IMAGE_HOSTS"); exists {

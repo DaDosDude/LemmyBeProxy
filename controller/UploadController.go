@@ -127,7 +127,7 @@ func (receiver *UploadController) UploadImage(request *http.Request) (*http.Resp
 		}, nil
 	}
 
-	fileURL, err := receiver.backend.UploadImage(fileBytes, filename, jwt)
+	fileURL, err := receiver.backend.UploadImage(fileBytes, filename, jwt, request.Headers)
 	if err != nil {
 		return &http.Response{
 			StatusCode: goHttp.StatusBadRequest,
@@ -210,7 +210,12 @@ func (receiver *UploadController) ServeImage(request *http.Request) (*http.Respo
 		}, nil
 	}
 
-	resp, err := goHttp.Get(target.String())
+	fetchReq, err := goHttp.NewRequest(goHttp.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Headers.ApplyClientIP(fetchReq)
+	resp, err := goHttp.DefaultClient.Do(fetchReq)
 	if err != nil {
 		return nil, err
 	}

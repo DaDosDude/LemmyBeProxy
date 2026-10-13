@@ -200,6 +200,49 @@ catch these:
   authenticated requests — anonymous requests never triggered it,
   making this easy to miss without testing both states live.
 
+## Client IP forwarding
+
+Every request this proxy makes to the backend carries the real
+visitor's IP, so the backend rate-limits each visitor separately.
+Without it, everyone reaching the backend through this proxy (an
+mlmym or lemmyBB frontend, apps on `/api/v3`) arrives from the proxy's
+own address and shares one rate-limit bucket — a single crawler can
+exhaust it and get the backend to return 429 to every user at once.
+
+How the visitor IP is chosen, for every endpoint, both backends and
+both wire formats:
+
+- **`X-Real-IP` on the incoming request** is used if present and a
+  valid IP. Your front proxy must set it to the real remote address
+  (Caddy: `header_up X-Real-IP {client_ip}`; nginx:
+  `proxy_set_header X-Real-IP $remote_addr;`). mlmym forwards its own
+  caller's `X-Real-IP` on its API calls.
+- **Otherwise, the direct caller's address** (the TCP peer) is used —
+  the same thing the backend saw before this feature existed.
+- **A client-supplied `X-Forwarded-For` or `Forwarded` is never
+  trusted.** Anyone calling `/api/v3` can put any address in them.
+
+On the outgoing request, `X-Real-IP` and `X-Forwarded-For` are both set
+to that single address, and any incoming `Forwarded` header is removed.
+`X-Forwarded-For` is replaced rather than appended to on purpose: real
+Lemmy (actix-web) takes the client address from `Forwarded`, then from
+the *leftmost* `X-Forwarded-For` entry, and ignores `X-Real-IP` — so
+appending to a client-supplied chain would let any caller choose the IP
+Lemmy rate-limits on. Backends that read `X-Real-IP` get the same
+address.
+
+Two deployment requirements for this to work end to end:
+
+- **Don't expose this proxy's port directly.** `X-Real-IP` is only
+  trustworthy because the front proxy overwrites it. Bind to
+  `127.0.0.1` or a private Docker network, as in Quick start.
+- **If `BACKEND_INSTANCE` points at a public domain**, the reverse
+  proxy in front of the backend sees this proxy as the client and will
+  overwrite or discard these headers unless it trusts this proxy's
+  address (Caddy: `trusted_proxies` for the Docker bridge range, and
+  `{client_ip}` instead of `{remote_host}`). Pointing
+  `BACKEND_INSTANCE` at the backend's internal address avoids this.
+
 ## Environment variables
 
 | Variable | Required | Description |
@@ -226,6 +269,13 @@ reproducible with plain `curl`, nothing specific to this proxy's
 client. Point `BACKEND_INSTANCE` at the backend's internal address
 directly instead (e.g. `http://lemmy:8536` on its own Docker network) —
 see the `BACKEND_INSTANCE` row above.
+
+**Every user gets rate-limited at once (HTTP 429 from the backend)** —
+the backend is seeing all proxied traffic as one client. Check what
+address actually reaches it: the front proxy must set `X-Real-IP`, and
+any reverse proxy between this proxy and the backend must trust this
+proxy's address instead of overwriting the header — see Client IP
+forwarding.
 
 **Parse error mentioning an invalid character around byte `0x1f`** — a
 gzip-compressed response got handed to the JSON parser undecompressed.

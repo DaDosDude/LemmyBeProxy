@@ -2,6 +2,7 @@ package piefed
 
 import (
 	piefedResponse "LemmyBeProxy/dto/response/piefed"
+	appHttp "LemmyBeProxy/http"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -14,7 +15,7 @@ import (
 // This bypasses defaultHandler/sendRequest entirely because those are built
 // for JSON request bodies only — image upload needs a real multipart body,
 // matching what mlmym itself sends when talking to a real Lemmy pict-rs.
-func (receiver *Piefed) UploadImage(fileBytes []byte, filename string, bearerToken string) (*piefedResponse.ImageUploadResponse, error) {
+func (receiver *Piefed) UploadImage(fileBytes []byte, filename string, bearerToken string, headers appHttp.Headers) (*piefedResponse.ImageUploadResponse, error) {
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 
@@ -39,6 +40,7 @@ func (receiver *Piefed) UploadImage(fileBytes []byte, filename string, bearerTok
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	headers.ApplyClientIP(req)
 
 	res, err := goHttp.DefaultClient.Do(req)
 	if err != nil {

@@ -125,7 +125,7 @@ func (receiver *LemmyBackend) Site(headers appHttp.Headers) (*lemmyResponse.GetS
 // pict-rs already returns a servable file token directly in its
 // response, so the resulting URL is built from that token rather than
 // needing any translation.
-func (receiver *LemmyBackend) UploadImage(fileBytes []byte, filename string, jwt string) (string, error) {
+func (receiver *LemmyBackend) UploadImage(fileBytes []byte, filename string, jwt string, headers appHttp.Headers) (string, error) {
 	body := new(bytes.Buffer)
 	writer := multipart.NewWriter(body)
 
@@ -150,6 +150,7 @@ func (receiver *LemmyBackend) UploadImage(fileBytes []byte, filename string, jwt
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Cookie", "jwt="+jwt)
+	headers.ApplyClientIP(req)
 
 	res, err := goHttp.DefaultClient.Do(req)
 	if err != nil {

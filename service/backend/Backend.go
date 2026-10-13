@@ -59,8 +59,10 @@ type Backend interface {
 	// that URL alone, so it stays in the controller rather than being
 	// duplicated per backend. jwt is a raw token, not a Bearer/Cookie
 	// header — each backend applies it however its own upload endpoint
-	// actually expects auth.
-	UploadImage(fileBytes []byte, filename string, jwt string) (string, error)
+	// actually expects auth. headers carries the visitor's client-IP
+	// headers (see http.Headers.SetClientIP) for the backend's own
+	// per-IP rate limiting.
+	UploadImage(fileBytes []byte, filename string, jwt string, headers http.Headers) (string, error)
 
 	// GetPersonMentions, GetReplies, and GetPrivateMessages are fetched
 	// on every authenticated page load by real Lemmy clients (lemmyBB

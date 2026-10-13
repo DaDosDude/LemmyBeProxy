@@ -54,6 +54,20 @@ func main() {
 			appRequest.QueryParams = helper.SingularizeMapValue(query)
 		}
 
+		// Forward the real visitor's IP to the backend, not this proxy's
+		// caller's. Both backend clients pass appRequest.Headers through
+		// on every request, so setting it once here covers every endpoint
+		// for both BACKEND_TYPEs and both FRONTEND_VERSIONs. Without it,
+		// everyone using mlmym/lemmyBB/apps through this proxy shared a
+		// single backend rate-limit bucket — one crawler exhausted it and
+		// the backend returned 429 to all of them (retrofed, Oct 13).
+		// See appHttp.ClientIP and Headers.SetClientIP for which headers
+		// are trusted and why.
+		appRequest.Headers.SetClientIP(appHttp.ClientIP(
+			request.Header.Get(appHttp.HeaderRealIP),
+			request.RemoteAddr,
+		))
+
 		// Lemmy 0.18.x and earlier clients send the auth token as an
 		// "auth" field in the JSON body (POST/PUT) or as an "auth" query
 		// parameter (GET), rather than an Authorization: Bearer header —
